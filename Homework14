@@ -1,0 +1,156 @@
+## Code1: Time-series graph
+library(shiny)
+library(ggplot2)
+library(dplyr)
+library(forecast)
+
+# Define UI
+ui <- fluidPage(
+  titlePanel("TB Data Analysis"),
+  sidebarLayout(
+    sidebarPanel(
+      selectInput("country", "Select Country:", choices = unique(tb_data$Country.or.territory.name))
+    ),
+    mainPanel(
+      plotOutput("timeSeriesPlot")
+    )
+  )
+)
+
+# Define server
+server <- function(input, output) {
+  # Reactive dataset for selected country
+  selected_data <- reactive({
+    tb_data %>%
+      filter(Country.or.territory.name == input$country)
+  })
+  
+  # Time series with forecast
+  output$timeSeriesPlot <- renderPlot({
+    data <- selected_data()
+    
+    # Fit linear model for trend prediction
+    model <- lm(Estimated.prevalence.of.TB..all.forms..per.100.000.population ~ Year, data = data)
+    data$predicted <- predict(model, data.frame(Year = data$Year))
+    
+    ggplot(data, aes(x = Year)) +
+      geom_line(aes(y = Estimated.prevalence.of.TB..all.forms..per.100.000.population), color = "blue") +
+      geom_line(aes(y = predicted), color = "red", linetype = "dashed") +
+      labs(y = "TB Prevalence per 100,000", title = paste("TB Prevalence Over Time -", input$country)) +
+      theme_minimal()
+  })
+}
+
+# Run the application 
+shinyApp(ui = ui, server = server)
+
+ 
+## Code2: Regional Trend Analysis with K-Means Clustering: 
+library(shiny)
+library(ggplot2)
+library(dplyr)
+library(caret)
+
+ui <- fluidPage(
+    titlePanel("Regional TB Clustering"),
+    sidebarLayout(
+        sidebarPanel(
+            sliderInput("clusters", "Number of Clusters:", min = 2, max = 5, value = 3)
+        ),
+        mainPanel(
+            plotOutput("regionPlot")
+        )
+    )
+)
+
+server <- function(input, output) {
+    output$regionPlot <- renderPlot({
+        # Prepare data for clustering
+        region_data <- tb_data %>%
+            group_by(Region) %>%
+            summarize(avg_prevalence = mean(Estimated.prevalence.of.TB..all.forms..per.100.000.population, na.rm = TRUE))
+
+        # K-means clustering
+        set.seed(123)
+        kmeans_model <- kmeans(region_data$avg_prevalence, centers = input$clusters)
+        region_data$cluster <- factor(kmeans_model$cluster)
+
+        ggplot(region_data, aes(x = Region, y = avg_prevalence, fill = cluster)) +
+            geom_bar(stat = "identity") +
+            labs(y = "Average TB Prevalence per 100,000", x = "Region", title = "TB Prevalence by Region with Clusters") +
+            theme_minimal()
+    })
+}
+
+shinyApp(ui = ui, server = server)
+
+
+## Code3 Geospatial Plot with Spatial Clustering (Simulated Coordinates):
+
+library(shiny)
+library(ggplot2)
+library(dplyr)
+library(sf)
+
+# Adding fictional lat/lon to tb_data for demonstration
+tb_data <- tb_data %>%
+    mutate(latitude = runif(n(), min = -90, max = 90),
+           longitude = runif(n(), min = -180, max = 180))
+
+ui <- fluidPage(
+    titlePanel("Geospatial TB Analysis"),
+    sidebarLayout(
+        sidebarPanel(
+            sliderInput("n_clusters", "Number of Clusters:", min = 2, max = 5, value = 3)
+        ),
+        mainPanel(
+            plotOutput("geoPlot")
+        )
+    )
+)
+
+server <- function(input, output) {
+    output$geoPlot <- renderPlot({
+        # Spatial clustering (k-means)
+        kmeans_geo <- kmeans(tb_data[, c("latitude", "longitude")], centers = input$n_clusters)
+        tb_data$geo_cluster <- as.factor(kmeans_geo$cluster)
+
+        ggplot(tb_data, aes(x = longitude, y = latitude, color = geo_cluster)) +
+            geom_point(size = 2) +
+            labs(title = "Geospatial Clustering of TB Data") +
+            theme_minimal()
+    })
+}
+
+shinyApp(ui = ui, server = server)
+
+## Code4 Geospatial Plot:
+
+  output$mapPlot <- renderLeaflet({
+    # World map data
+    world_map <- map("world", plot = FALSE, fill = TRUE)
+    
+    # Merge with dataset by country name
+    dataset_summary <- dataset %>%
+      filter(Year == input$yearRange[2]) %>%
+      group_by(Country.or.territory.name) %>%
+      summarise(TB_Prevalence = mean(Estimated.prevalence.of.TB..all.forms..per.100.000.population, na.rm = TRUE))
+    
+    # Define color palette
+    pal <- colorNumeric("YlOrRd", domain = dataset_summary$TB_Prevalence)
+    
+    leaflet(data = world_map) %>%
+      addTiles() %>%
+      addPolygons(
+        fillColor = ~pal(dataset_summary$TB_Prevalence[match(world_map$names, dataset_summary$Country.or.territory.name)]),
+        color = "#BDBDC3", weight = 1, smoothFactor = 0.5,
+        fillOpacity = 0.7, highlightOptions = highlightOptions(weight = 3, color = "blue", bringToFront = TRUE)
+      ) %>%
+      addLegend("bottomright", pal = pal, values = dataset_summary$TB_Prevalence,
+                title = "TB Prevalence (per 100,000)",
+                opacity = 1)
+  })
+}
+
+# Run the application 
+shinyApp(ui = ui, server = server)
